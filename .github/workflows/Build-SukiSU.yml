@@ -235,84 +235,203 @@ jobs:
       - name: Add Configuration Settings
         run: |
           cd kernel_workspace/kernel_platform
-          CONFIG_FILE=./common/arch/arm64/configs/gki_defconfig
-          KERNEL_VERSION="${{ github.event.inputs.KERNEL_VERSION }}"
 
-          # SukiSU Ultra config
-          echo "CONFIG_KSU=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
+          # Helper to set/override CONFIG entries (works for both "CONFIG_X=y" and "# CONFIG_X is not set")
+          set_kcfg() {
+            local file="$1" key="$2" val="$3"
+            [ -f "$file" ] || return 0
+            # drop any "not set" line
+            sed -i "/^# ${key} is not set$/d" "$file"
+            if grep -qE "^${key}=" "$file"; then
+              sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+            else
+              echo "${key}=${val}" >> "$file"
+            fi
+          }
+
+          # Target config fragments we want to patch
+          GKI_DEFCONFIG="./common/arch/arm64/configs/gki_defconfig"
+          MSM_GKI_CONFIG="./msm-kernel/arch/arm64/configs/${{ github.event.inputs.CPUD }}-GKI.config"
+
+          # -------------------------
+          # Existing SukiSU Ultra config
+          # -------------------------
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KPM y
 
           # SUSFS config
-          echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
-          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SUS_PATH y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SUS_MOUNT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SUS_KSTAT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SUS_OVERLAYFS n
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_TRY_UMOUNT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SPOOF_UNAME y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_ENABLE_LOG y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_OPEN_REDIRECT y
 
           # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
-          # LZ4KD配置
-          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
-          CONFIG_FILE=./common/arch/arm64/configs/gki_defconfig
+          # -------------------------
+          # NEW: Full cgroups + systemd-friendly kernel features
+          # (systemd upstream documents these as required/recommended kernel options)
+          # -------------------------
+          for f in "$GKI_DEFCONFIG" "$MSM_GKI_CONFIG"; do
+            [ -f "$f" ] || continue
 
+            # Core cgroups + common controllers
+            set_kcfg "$f" CONFIG_CGROUPS y
+            set_kcfg "$f" CONFIG_CGROUP_BPF y
+            set_kcfg "$f" CONFIG_CGROUP_SCHED y
+            set_kcfg "$f" CONFIG_FAIR_GROUP_SCHED y
+            set_kcfg "$f" CONFIG_CFS_BANDWIDTH y
+            set_kcfg "$f" CONFIG_CPUSETS y
+            set_kcfg "$f" CONFIG_CGROUP_PIDS y
+            set_kcfg "$f" CONFIG_CGROUP_DEVICE y
+            set_kcfg "$f" CONFIG_CGROUP_CPUACCT y
+            set_kcfg "$f" CONFIG_MEMCG y
+            set_kcfg "$f" CONFIG_BLK_CGROUP y
+            set_kcfg "$f" CONFIG_SOCK_CGROUP_DATA y
+            set_kcfg "$f" CONFIG_CGROUP_NET_CLASSID y
+            set_kcfg "$f" CONFIG_CGROUP_NET_PRIO y
+
+            # systemd baseline kernel facilities
+            set_kcfg "$f" CONFIG_DEVTMPFS y
+            set_kcfg "$f" CONFIG_DEVTMPFS_MOUNT y
+            set_kcfg "$f" CONFIG_INOTIFY_USER y
+            set_kcfg "$f" CONFIG_SIGNALFD y
+            set_kcfg "$f" CONFIG_TIMERFD y
+            set_kcfg "$f" CONFIG_EPOLL y
+            set_kcfg "$f" CONFIG_UNIX y
+            set_kcfg "$f" CONFIG_SYSFS y
+            set_kcfg "$f" CONFIG_PROC_FS y
+            set_kcfg "$f" CONFIG_FHANDLE y
+            set_kcfg "$f" CONFIG_NET y
+            set_kcfg "$f" CONFIG_NET_NS y
+            set_kcfg "$f" CONFIG_USER_NS y
+            set_kcfg "$f" CONFIG_SECCOMP y
+            set_kcfg "$f" CONFIG_SECCOMP_FILTER y
+            set_kcfg "$f" CONFIG_NET_SCHED y
+            set_kcfg "$f" CONFIG_NET_SCH_FQ_CODEL y
+
+            # avoid legacy udev/sysfs/hotplug paths where present
+            set_kcfg "$f" CONFIG_SYSFS_DEPRECATED n
+            set_kcfg "$f" CONFIG_FW_LOADER_USER_HELPER n
+            set_kcfg "$f" CONFIG_UEVENT_HELPER_PATH '""'
+
+            # optional but commonly expected by modern userspace
+            set_kcfg "$f" CONFIG_AUTOFS_FS y
+            set_kcfg "$f" CONFIG_TMPFS_XATTR y
+            set_kcfg "$f" CONFIG_TMPFS_POSIX_ACL y
+          done
+
+          # -------------------------
+          # NEW: Full eBPF networking support (TC/XDP + JIT + BTF)
+          # (matches what bpftool feature probing checks for)
+          # -------------------------
+          for f in "$GKI_DEFCONFIG" "$MSM_GKI_CONFIG"; do
+            [ -f "$f" ] || continue
+
+            set_kcfg "$f" CONFIG_BPF y
+            set_kcfg "$f" CONFIG_BPF_SYSCALL y
+            set_kcfg "$f" CONFIG_HAVE_EBPF_JIT y
+            set_kcfg "$f" CONFIG_BPF_JIT y
+            set_kcfg "$f" CONFIG_BPF_EVENTS y
+            set_kcfg "$f" CONFIG_TRACING y
+            set_kcfg "$f" CONFIG_FTRACE_SYSCALLS y
+
+            # BTF (for modern CO-RE workflows; large but "full support" usually implies it)
+            set_kcfg "$f" CONFIG_DEBUG_INFO_BTF y
+            set_kcfg "$f" CONFIG_DEBUG_INFO_BTF_MODULES y
+
+            # Networking attach points
+            set_kcfg "$f" CONFIG_XDP_SOCKETS y
+            set_kcfg "$f" CONFIG_LWTUNNEL_BPF y
+            set_kcfg "$f" CONFIG_NET_ACT_BPF y
+            set_kcfg "$f" CONFIG_NET_CLS_BPF y
+            set_kcfg "$f" CONFIG_NET_CLS_ACT y
+            set_kcfg "$f" CONFIG_NET_SCH_INGRESS y
+            set_kcfg "$f" CONFIG_BPF_STREAM_PARSER y
+            set_kcfg "$f" CONFIG_NETFILTER_XT_MATCH_BPF y
+
+            # Helpful for some helpers / routing cases
+            set_kcfg "$f" CONFIG_XFRM y
+            set_kcfg "$f" CONFIG_IP_ROUTE_CLASSID y
+            set_kcfg "$f" CONFIG_IPV6_SEG6_BPF y
+          done
+
+          # -------------------------
+          # NEW: KVM host support (arm64)
+          # -------------------------
+          for f in "$GKI_DEFCONFIG" "$MSM_GKI_CONFIG"; do
+            [ -f "$f" ] || continue
+            set_kcfg "$f" CONFIG_VIRTUALIZATION y
+            set_kcfg "$f" CONFIG_KVM y
+            set_kcfg "$f" CONFIG_KVM_ARM_HOST y
+
+            # optional accelerators (safe as modules if supported by tree)
+            set_kcfg "$f" CONFIG_VHOST y
+            set_kcfg "$f" CONFIG_VHOST_NET y
+            set_kcfg "$f" CONFIG_VHOST_VSOCK y
+          done
+
+          # -------------------------
+          # Your existing LZ4KD/ZRAM logic (unchanged)
+          # -------------------------
+          CONFIG_FILE="$GKI_DEFCONFIG"
+
+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
             if [ "${{ github.event.inputs.KERNEL_VERSION }}" = "5.10" ]; then
-              echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM=y" >> "$CONFIG_FILE"
-              echo "CONFIG_MODULE_SIG=n" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZO=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
+              set_kcfg "$CONFIG_FILE" CONFIG_ZSMALLOC y
+              set_kcfg "$CONFIG_FILE" CONFIG_ZRAM y
+              set_kcfg "$CONFIG_FILE" CONFIG_MODULE_SIG n
+              set_kcfg "$CONFIG_FILE" CONFIG_CRYPTO_LZO y
+              set_kcfg "$CONFIG_FILE" CONFIG_ZRAM_DEF_COMP_LZ4KD y
             fi
 
             if [ "${{ github.event.inputs.KERNEL_VERSION }}" != "6.6" ] && [ "${{ github.event.inputs.KERNEL_VERSION }}" != "6.12" ] && [ "${{ github.event.inputs.KERNEL_VERSION }}" != "5.10" ]; then
-              if grep -q "CONFIG_ZSMALLOC" -- "$CONFIG_FILE"; then
-                sed -i 's/CONFIG_ZSMALLOC=m/CONFIG_ZSMALLOC=y/g' "$CONFIG_FILE"
-              else
-                echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              fi
-              sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
+              set_kcfg "$CONFIG_FILE" CONFIG_ZSMALLOC y
+              set_kcfg "$CONFIG_FILE" CONFIG_ZRAM y
             fi
 
             if [ "${{ github.event.inputs.KERNEL_VERSION }}" = "6.6" ] || [ "${{ github.event.inputs.KERNEL_VERSION }}" = "6.12" ]; then
-              echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
+              set_kcfg "$CONFIG_FILE" CONFIG_ZSMALLOC y
+              set_kcfg "$CONFIG_FILE" CONFIG_ZRAM y
             fi
 
             if [ "${{ github.event.inputs.ANDROID_VERSION }}" = "android14" ] || [ "${{ github.event.inputs.ANDROID_VERSION }}" = "android15" ] || [ "${{ github.event.inputs.ANDROID_VERSION }}" = "android16" ]; then
-              if [  -e ./common/modules.bzl ]; then
+              if [ -e ./common/modules.bzl ]; then
                 sed -i 's/"drivers\/block\/zram\/zram\.ko",//g; s/"mm\/zsmalloc\.ko",//g' "./common/modules.bzl"
               fi
 
-              if [  -e ./msm-kernel/modules.bzl ]; then
+              if [ -e ./msm-kernel/modules.bzl ]; then
                 sed -i 's/"drivers\/block\/zram\/zram\.ko",//g; s/"mm\/zsmalloc\.ko",//g' "./msm-kernel/modules.bzl"
-                echo "CONFIG_ZSMALLOC=y" >> "msm-kernel/arch/arm64/configs/${{ github.event.inputs.CPUD }}-GKI.config"
-                echo "CONFIG_ZRAM=y" >> "msm-kernel/arch/arm64/configs/${{ github.event.inputs.CPUD }}-GKI.config"
+                set_kcfg "./msm-kernel/arch/arm64/configs/${{ github.event.inputs.CPUD }}-GKI.config" CONFIG_ZSMALLOC y
+                set_kcfg "./msm-kernel/arch/arm64/configs/${{ github.event.inputs.CPUD }}-GKI.config" CONFIG_ZRAM y
               fi
-              
-              echo "CONFIG_MODULE_SIG_FORCE=n" >> "$CONFIG_FILE"
+
+              set_kcfg "$CONFIG_FILE" CONFIG_MODULE_SIG_FORCE n
             elif [ "${{ github.event.inputs.KERNEL_VERSION }}" = "5.10" ] || [ "${{ github.event.inputs.KERNEL_VERSION }}" = "5.15" ]; then
-              rm "common/android/gki_aarch64_modules"
+              rm -f "common/android/gki_aarch64_modules"
               touch "common/android/gki_aarch64_modules"
             fi
 
             if grep -q "CONFIG_ZSMALLOC=y" "$CONFIG_FILE" && grep -q "CONFIG_ZRAM=y" "$CONFIG_FILE"; then
-              echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_842=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
+              set_kcfg "$CONFIG_FILE" CONFIG_CRYPTO_LZ4HC y
+              set_kcfg "$CONFIG_FILE" CONFIG_CRYPTO_LZ4K y
+              set_kcfg "$CONFIG_FILE" CONFIG_CRYPTO_LZ4KD y
+              set_kcfg "$CONFIG_FILE" CONFIG_CRYPTO_842 y
+              set_kcfg "$CONFIG_FILE" CONFIG_ZRAM_WRITEBACK y
             fi
           fi
+
 
       - name: Build kernel
         if: ${{ github.event.inputs.CPU == 'sm8650' || github.event.inputs.CPU == 'sm7675' }}
