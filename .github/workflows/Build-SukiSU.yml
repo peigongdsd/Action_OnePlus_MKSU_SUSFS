@@ -108,7 +108,7 @@ on:
         type: boolean
         description: "是否启用添加更多的ZRAM算法？"
         required: true
-        default: true
+        default: false
 
 jobs:
   build:
@@ -244,6 +244,20 @@ jobs:
 
           GKI_DEFCONFIG="./common/arch/arm64/configs/gki_defconfig"
           MSM_GKI_CONFIG="./msm-kernel/arch/arm64/configs/${{ github.event.inputs.CPUD }}-GKI.config"
+
+          # Console / early boot visibility (Qualcomm / Android)
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_TTY y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_VT y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_VT_CONSOLE y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_FRAMEBUFFER_CONSOLE y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_DRM y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_DRM_FBDEV_EMULATION y
+
+          # Qualcomm GENI UART console + earlycon
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_SERIAL_EARLYCON y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_SERIAL_QCOM_GENI y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_SERIAL_QCOM_GENI_CONSOLE y
+          set_kcfg "$GKI_DEFCONFIG" CONFIG_SERIAL_CORE_CONSOLE y
 
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU y
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KPM y
