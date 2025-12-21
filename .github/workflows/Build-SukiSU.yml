@@ -6,7 +6,7 @@ on:
         type: choice
         description: "分支"
         required: true
-        default: sm8550
+        default: sm8750
         options:
           - sm7550
           - sm7675
@@ -20,7 +20,7 @@ on:
         type: choice
         description: "配置文件"
         required: true
-        default: oneplus_ace2_pro_v
+        default: oneplus_13
         options:
           - oneplus_nord_ce4_v
           - oneplus_ace_3v_v
@@ -51,7 +51,7 @@ on:
         type: choice
         description: "处理器代号"
         required: true
-        default: kalama
+        default: sun
         options:
           - crow
           - waipio
@@ -71,16 +71,16 @@ on:
           - android15
           - android16
       KERNEL_VERSION:
-       type: choice
-       description: "内核版本"
-       required: true
-       default: "5.15"
-       options:
-         - "5.10"
-         - "5.15"
-         - "6.1"
-         - "6.6"
-         - "6.12"
+        type: choice
+        description: "内核版本"
+        required: true
+        default: "6.6"
+        options:
+          - "5.10"
+          - "5.15"
+          - "6.1"
+          - "6.6"
+          - "6.12"
       BUILD_METHOD:
         type: choice
         description: "编译方式"
@@ -108,7 +108,7 @@ on:
         type: boolean
         description: "是否启用添加更多的ZRAM算法？"
         required: true
-        default: false
+        default: true
 
 jobs:
   build:
@@ -128,13 +128,13 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config --global user.name "Numbersf"
-          git config --global user.email "263623064@qq.com"
+          git config --global user.name "peigongdsd"
+          git config --global user.email "peigong2013@outlook.com"
 
       - name: Install dependencies
         run: |
           sudo apt update && sudo apt upgrade -y
-          sudo apt install -y python3 git curl
+          sudo apt install -y python3 git curl wget jq zip unzip
 
       - name: Show selected inputs debug
         run: |
@@ -161,15 +161,14 @@ jobs:
           repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b refs/heads/oneplus/${{ github.event.inputs.CPU }} -m ${{ github.event.inputs.FEIL }}.xml --depth=1
           repo sync
           if [  -e kernel_platform/common/BUILD.bazel ]; then
-          sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' kernel_platform/common/BUILD.bazel
+            sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' kernel_platform/common/BUILD.bazel
           fi
           if [  -e kernel_platform/msm-kernel/BUILD.bazel ]; then
-          sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' kernel_platform/msm-kernel/BUILD.bazel
+            sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' kernel_platform/msm-kernel/BUILD.bazel
           fi
           rm kernel_platform/common/android/abi_gki_protected_exports_* || echo "No protected exports!"
           rm kernel_platform/msm-kernel/android/abi_gki_protected_exports_* || echo "No protected exports!"
 
-      # 删除 -dirty 后缀
       - name: Force remove -dirty suffix
         run: |
           cd kernel_workspace/kernel_platform
@@ -177,10 +176,7 @@ jobs:
           sed -i 's/ -dirty//g' msm-kernel/scripts/setlocalversion
           sed -i 's/ -dirty//g' external/dtc/scripts/setlocalversion
           sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' common/scripts/setlocalversion
-          git add -A
-          git commit -m "Force remove -dirty suffix from kernel version"
 
-      # 添加 SukiSU Ultra
       - name: Add KernelSU-SukiSU Ultra
         run: |
           cd kernel_workspace/kernel_platform
@@ -203,11 +199,11 @@ jobs:
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
           if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
-          echo "正在给内核打zram补丁"
-          cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./common/include/linux
-          cp -r ../SukiSU_patch/other/zram/lz4k/lib/* ./common/lib
-          cp -r ../SukiSU_patch/other/zram/lz4k/crypto/* ./common/crypto
-          cp -r ../SukiSU_patch/other/zram/lz4k_oplus ./common/lib/
+            echo "正在给内核打zram补丁"
+            cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./common/include/linux
+            cp -r ../SukiSU_patch/other/zram/lz4k/lib/* ./common/lib
+            cp -r ../SukiSU_patch/other/zram/lz4k/crypto/* ./common/crypto
+            cp -r ../SukiSU_patch/other/zram/lz4k_oplus ./common/lib/
           fi
 
           cd ./common
@@ -231,16 +227,13 @@ jobs:
             echo '完成LZ4KD补丁'
           fi
 
-      # 配置信息
       - name: Add Configuration Settings
         run: |
           cd kernel_workspace/kernel_platform
 
-          # Helper to set/override CONFIG entries (works for both "CONFIG_X=y" and "# CONFIG_X is not set")
           set_kcfg() {
             local file="$1" key="$2" val="$3"
             [ -f "$file" ] || return 0
-            # drop any "not set" line
             sed -i "/^# ${key} is not set$/d" "$file"
             if grep -qE "^${key}=" "$file"; then
               sed -i "s|^${key}=.*|${key}=${val}|" "$file"
@@ -249,17 +242,12 @@ jobs:
             fi
           }
 
-          # Target config fragments we want to patch
           GKI_DEFCONFIG="./common/arch/arm64/configs/gki_defconfig"
           MSM_GKI_CONFIG="./msm-kernel/arch/arm64/configs/${{ github.event.inputs.CPUD }}-GKI.config"
 
-          # -------------------------
-          # Existing SukiSU Ultra config
-          # -------------------------
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU y
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KPM y
 
-          # SUSFS config
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS y
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT y
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SUS_PATH y
@@ -276,17 +264,11 @@ jobs:
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG y
           set_kcfg "$GKI_DEFCONFIG" CONFIG_KSU_SUSFS_OPEN_REDIRECT y
 
-          # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
-          # -------------------------
-          # NEW: Full cgroups + systemd-friendly kernel features
-          # (systemd upstream documents these as required/recommended kernel options)
-          # -------------------------
           for f in "$GKI_DEFCONFIG" "$MSM_GKI_CONFIG"; do
             [ -f "$f" ] || continue
 
-            # Core cgroups + common controllers
             set_kcfg "$f" CONFIG_CGROUPS y
             set_kcfg "$f" CONFIG_CGROUP_BPF y
             set_kcfg "$f" CONFIG_CGROUP_SCHED y
@@ -302,7 +284,6 @@ jobs:
             set_kcfg "$f" CONFIG_CGROUP_NET_CLASSID y
             set_kcfg "$f" CONFIG_CGROUP_NET_PRIO y
 
-            # systemd baseline kernel facilities
             set_kcfg "$f" CONFIG_DEVTMPFS y
             set_kcfg "$f" CONFIG_DEVTMPFS_MOUNT y
             set_kcfg "$f" CONFIG_INOTIFY_USER y
@@ -321,21 +302,15 @@ jobs:
             set_kcfg "$f" CONFIG_NET_SCHED y
             set_kcfg "$f" CONFIG_NET_SCH_FQ_CODEL y
 
-            # avoid legacy udev/sysfs/hotplug paths where present
             set_kcfg "$f" CONFIG_SYSFS_DEPRECATED n
             set_kcfg "$f" CONFIG_FW_LOADER_USER_HELPER n
             set_kcfg "$f" CONFIG_UEVENT_HELPER_PATH '""'
 
-            # optional but commonly expected by modern userspace
             set_kcfg "$f" CONFIG_AUTOFS_FS y
             set_kcfg "$f" CONFIG_TMPFS_XATTR y
             set_kcfg "$f" CONFIG_TMPFS_POSIX_ACL y
           done
 
-          # -------------------------
-          # NEW: Full eBPF networking support (TC/XDP + JIT + BTF)
-          # (matches what bpftool feature probing checks for)
-          # -------------------------
           for f in "$GKI_DEFCONFIG" "$MSM_GKI_CONFIG"; do
             [ -f "$f" ] || continue
 
@@ -346,12 +321,9 @@ jobs:
             set_kcfg "$f" CONFIG_BPF_EVENTS y
             set_kcfg "$f" CONFIG_TRACING y
             set_kcfg "$f" CONFIG_FTRACE_SYSCALLS y
-
-            # BTF (for modern CO-RE workflows; large but "full support" usually implies it)
             set_kcfg "$f" CONFIG_DEBUG_INFO_BTF y
             set_kcfg "$f" CONFIG_DEBUG_INFO_BTF_MODULES y
 
-            # Networking attach points
             set_kcfg "$f" CONFIG_XDP_SOCKETS y
             set_kcfg "$f" CONFIG_LWTUNNEL_BPF y
             set_kcfg "$f" CONFIG_NET_ACT_BPF y
@@ -361,30 +333,21 @@ jobs:
             set_kcfg "$f" CONFIG_BPF_STREAM_PARSER y
             set_kcfg "$f" CONFIG_NETFILTER_XT_MATCH_BPF y
 
-            # Helpful for some helpers / routing cases
             set_kcfg "$f" CONFIG_XFRM y
             set_kcfg "$f" CONFIG_IP_ROUTE_CLASSID y
             set_kcfg "$f" CONFIG_IPV6_SEG6_BPF y
           done
 
-          # -------------------------
-          # NEW: KVM host support (arm64)
-          # -------------------------
           for f in "$GKI_DEFCONFIG" "$MSM_GKI_CONFIG"; do
             [ -f "$f" ] || continue
             set_kcfg "$f" CONFIG_VIRTUALIZATION y
             set_kcfg "$f" CONFIG_KVM y
             set_kcfg "$f" CONFIG_KVM_ARM_HOST y
-
-            # optional accelerators (safe as modules if supported by tree)
             set_kcfg "$f" CONFIG_VHOST y
             set_kcfg "$f" CONFIG_VHOST_NET y
             set_kcfg "$f" CONFIG_VHOST_VSOCK y
           done
 
-          # -------------------------
-          # Your existing LZ4KD/ZRAM logic (unchanged)
-          # -------------------------
           CONFIG_FILE="$GKI_DEFCONFIG"
 
           if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
@@ -432,90 +395,96 @@ jobs:
             fi
           fi
 
+      - name: Normalize BUILD_METHOD for oplus_build_kernel.sh
+        id: build_method_norm
+        run: |
+          m='${{ github.event.inputs.BUILD_METHOD }}'
+          if [ "$m" = "gki" ]; then
+            m="perf"
+          fi
+          echo "method=$m" >> "$GITHUB_OUTPUT"
 
       - name: Build kernel
         if: ${{ github.event.inputs.CPU == 'sm8650' || github.event.inputs.CPU == 'sm7675' }}
         run: |
           cd kernel_workspace
           ./kernel_platform/build_with_bazel.py -t ${{ github.event.inputs.CPUD }} ${{ github.event.inputs.BUILD_METHOD }}
-          
+
       - name: Fallback build kernel
         if: ${{ github.event.inputs.CPU != 'sm8650' && github.event.inputs.CPU != 'sm7675' }}
         run: |
-         cd kernel_workspace
-         LTO=thin SYSTEM_DLKM_RE_SIGN=0 BUILD_SYSTEM_DLKM=0 KMI_SYMBOL_LIST_STRICT_MODE=0 ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ github.event.inputs.CPUD }} ${{ github.event.inputs.BUILD_METHOD }}
+          cd kernel_workspace
+          LTO=thin SYSTEM_DLKM_RE_SIGN=0 BUILD_SYSTEM_DLKM=0 KMI_SYMBOL_LIST_STRICT_MODE=0 \
+            ./kernel_platform/oplus/build/oplus_build_kernel.sh \
+            ${{ github.event.inputs.CPUD }} \
+            ${{ steps.build_method_norm.outputs.method }}
 
-      - name: Make AnyKernel3
+      - name: Locate kernel Image + dist dir
+        id: locate
+        shell: bash
         run: |
-          git clone https://github.com/Numbersf/AnyKernel3 --depth=1
-          rm -rf ./AnyKernel3/.git
+          set -euo pipefail
+          KP="kernel_workspace/kernel_platform"
 
-          dir1="kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.BUILD_METHOD }}/dist/"
-          dir2="kernel_workspace/kernel_platform/bazel-out/k8-fastbuild/bin/msm-kernel/${{ github.event.inputs.CPUD }}_gki_kbuild_mixed_tree/"
-          dir3="kernel_workspace/kernel_platform/out/msm-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.BUILD_METHOD }}/dist/"
-          dir4="kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.BUILD_METHOD }}/gki_kernel/common/arch/arm64/boot/"
-          dir5="kernel_workspace/kernel_platform/out/msm-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.BUILD_METHOD }}/gki_kernel/common/arch/arm64/boot/"
-          target1="./AnyKernel3/"
-          target2="./kernel_workspace/kernel"
-
-          # 查找 Image 文件
-          if find "$dir1" -name "Image" | grep -q "Image"; then
-            image_path="$dir1"Image
-          elif find "$dir2" -name "Image" | grep -q "Image"; then
-            image_path="$dir2"Image
-          elif find "$dir3" -name "Image" | grep -q "Image"; then
-            image_path="$dir3"Image
-          elif find "$dir4" -name "Image" | grep -q "Image"; then
-            image_path="$dir4"Image
-          elif find "$dir5" -name "Image" | grep -q "Image"; then
-            image_path="$dir5"Image
-          else
-            image_path=$(find "./kernel_workspace/kernel_platform/common/out/" -name "Image" | head -n 1)
+          IMAGE="$(find "$KP" -type f -path '*/dist/Image' -print -quit 2>/dev/null || true)"
+          if [ -z "$IMAGE" ]; then
+            IMAGE="$(find "$KP" -type f -name 'Image' -print -quit 2>/dev/null || true)"
           fi
 
-          # 拷贝 Image
-          if [ -n "$image_path" ] && [ -f "$image_path" ]; then
-            mkdir -p "$dir1"
-            if [ "$(realpath "$image_path")" != "$(realpath "$dir1"Image)" ]; then
-              cp "$image_path" "$dir1"
-            else
-              echo "源文件与目标相同，跳过复制"
-            fi
-            cp "$dir1"Image ./AnyKernel3/Image
-          else
-            echo "未找到 Image 文件，构建可能失败"
+          if [ -z "$IMAGE" ] || [ ! -f "$IMAGE" ]; then
+            echo "::error::Image not found. Build likely failed earlier."
             exit 1
           fi
 
-          # 可选复制其它新文件（如果存在）
+          DIST_DIR="$(dirname "$IMAGE")"
+          echo "Found IMAGE: $IMAGE"
+          echo "Found DIST_DIR: $DIST_DIR"
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "dist_dir=$DIST_DIR" >> "$GITHUB_OUTPUT"
+          echo "DIST_DIR=$DIST_DIR" >> "$GITHUB_ENV"
+
+      - name: Make AnyKernel3
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git clone https://github.com/Numbersf/AnyKernel3 --depth=1
+          rm -rf ./AnyKernel3/.git
+
+          IMAGE="${{ steps.locate.outputs.image }}"
+          DIST_DIR="${{ steps.locate.outputs.dist_dir }}"
+
+          cp -f "$IMAGE" ./AnyKernel3/Image
+
           if [ "${{ github.event.inputs.CPU }}" = "sm8750" ] || [ "${{ github.event.inputs.CPU }}" = "sm8850" ]; then
-          for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
-            if [ -f "$dir1$file" ]; then
-              target_name="$file"
-              # 特殊处理 system_dlkm.erofs.img 的目标名
-              if [ "$file" = "system_dlkm.erofs.img" ]; then
-                target_name="system_dlkm.img"
+            for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
+              if [ -f "$DIST_DIR/$file" ]; then
+                target_name="$file"
+                if [ "$file" = "system_dlkm.erofs.img" ]; then
+                  target_name="system_dlkm.img"
+                fi
+                cp -f "$DIST_DIR/$file" "./AnyKernel3/$target_name"
+              else
+                echo "$file not found in $DIST_DIR, skipping"
               fi
-              cp "$dir1$file" "./AnyKernel3/$target_name"
-            else
-              echo "$file 不存在，跳过复制"
-            fi
-          done
+            done
           fi
 
       - name: Apply patch_linux and replace Image
         if: ${{ github.event.inputs.KPM == 'true' }}
+        shell: bash
         run: |
-          cd /home/runner/work/Action_OnePlus_MKSU_SUSFS/Action_OnePlus_MKSU_SUSFS/kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-${{ github.event.inputs.BUILD_METHOD }}/dist
+          set -euo pipefail
+          cd "$DIST_DIR"
 
           curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch_linux
           chmod +x patch_linux
           ./patch_linux
           rm -f Image
-          mv oImage Image
-          cp Image $GITHUB_WORKSPACE/AnyKernel3/Image
+          mv -f oImage Image
+          cp -f Image "$GITHUB_WORKSPACE/AnyKernel3/Image"
 
-      # 下载 SUSFS 模块（CI）
       - name: Download Latest SUSFS Module from CI
         if: ${{ github.event.inputs.SUSFS_CI == 'true' }}
         run: |
@@ -534,7 +503,6 @@ jobs:
           curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o ksu_module_susfs.zip "$ARTIFACT_URL"
           cp ksu_module_susfs.zip ./AnyKernel3/
 
-      # 下载 SUSFS 模块（Release）
       - name: Download Latest SUSFS Module from Release
         if: ${{ github.event.inputs.SUSFS_CI == 'false' }}
         run: |
@@ -550,8 +518,8 @@ jobs:
         id: feil_clean
         run: |
           clean_feil="${{ github.event.inputs.FEIL }}"
-          clean_feil="${clean_feil%_v}"  # 去掉结尾的 _v（如果有）
-          clean_feil="${clean_feil%_u}"  # 去掉结尾的 _u（如果有）
+          clean_feil="${clean_feil%_v}"
+          clean_feil="${clean_feil%_u}"
           echo "value=$clean_feil" >> $GITHUB_OUTPUT
 
       - name: Upload AnyKernel3
