@@ -354,12 +354,12 @@ jobs:
 
           for f in "$GKI_DEFCONFIG" "$MSM_GKI_CONFIG"; do
             [ -f "$f" ] || continue
-            set_kcfg "$f" CONFIG_VIRTUALIZATION y
-            set_kcfg "$f" CONFIG_KVM y
-            set_kcfg "$f" CONFIG_KVM_ARM_HOST y
-            set_kcfg "$f" CONFIG_VHOST y
-            set_kcfg "$f" CONFIG_VHOST_NET y
-            set_kcfg "$f" CONFIG_VHOST_VSOCK y
+            #set_kcfg "$f" CONFIG_VIRTUALIZATION y
+            #set_kcfg "$f" CONFIG_KVM y
+            #set_kcfg "$f" CONFIG_KVM_ARM_HOST y
+            #set_kcfg "$f" CONFIG_VHOST y
+            #set_kcfg "$f" CONFIG_VHOST_NET y
+            #set_kcfg "$f" CONFIG_VHOST_VSOCK y
           done
 
           CONFIG_FILE="$GKI_DEFCONFIG"
@@ -471,19 +471,19 @@ jobs:
 
           cp -f "$IMAGE" ./AnyKernel3/Image
 
-          if [ "${{ github.event.inputs.CPU }}" = "sm8750" ] || [ "${{ github.event.inputs.CPU }}" = "sm8850" ]; then
-            for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
-              if [ -f "$DIST_DIR/$file" ]; then
-                target_name="$file"
-                if [ "$file" = "system_dlkm.erofs.img" ]; then
-                  target_name="system_dlkm.img"
-                fi
-                cp -f "$DIST_DIR/$file" "./AnyKernel3/$target_name"
-              else
-                echo "$file not found in $DIST_DIR, skipping"
-              fi
-            done
-          fi
+          #if [ "${{ github.event.inputs.CPU }}" = "sm8750" ] || [ "${{ github.event.inputs.CPU }}" = "sm8850" ]; then
+          #  for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
+          #    if [ -f "$DIST_DIR/$file" ]; then
+          #      target_name="$file"
+          #      if [ "$file" = "system_dlkm.erofs.img" ]; then
+          #        target_name="system_dlkm.img"
+          #      fi
+          #      cp -f "$DIST_DIR/$file" "./AnyKernel3/$target_name"
+          #    else
+          #      echo "$file not found in $DIST_DIR, skipping"
+          #    fi
+          #  done
+          #fi
 
       - name: Apply patch_linux and replace Image
         if: ${{ github.event.inputs.KPM == 'true' }}
